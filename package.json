@@ -1,0 +1,24 @@
+{
+  "name": "mcpcute",
+  "version": "0.1.0",
+  "description": "MCP aggregator - aggregate multiple MCPs behind a single interface",
+  "module": "src/index.ts",
+  "type": "module",
+  "bin": {
+    "mcpcute": "./bin/mcpcute.ts"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch run src/index.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.24.3",
+    "zod": "^4.1.13"
+  }
+}
