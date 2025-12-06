@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import type { MCPConfig, MCPServerConfig, AggregatedTool, ToolDetails } from "./types.ts";
+import type { MCPConfig, MCPServerConfig, AggregatedTool, ToolDetails, MCPInfo, MCPDetails } from "./types.ts";
 
 interface ConnectedClient {
   client: Client;
@@ -141,7 +141,21 @@ export class MCPClientManager {
     return allTools;
   }
 
-  async searchTools(query?: string): Promise<AggregatedTool[]> {
+  async searchTools(query?: string, mcpName?: string): Promise<AggregatedTool[]> {
+    // If scoped to a specific MCP
+    if (mcpName) {
+      const tools = await this.listToolsForMCP(mcpName);
+      if (!query) {
+        return tools;
+      }
+      const lowerQuery = query.toLowerCase();
+      return tools.filter(
+        (t) =>
+          t.name.toLowerCase().includes(lowerQuery) ||
+          t.description?.toLowerCase().includes(lowerQuery)
+      );
+    }
+
     // If no query, we need all tools
     if (!query) {
       return this.listAllTools();
@@ -267,6 +281,53 @@ export class MCPClientManager {
     });
 
     return result;
+  }
+
+  // MCP-level operations
+
+  listMCPs(): MCPInfo[] {
+    const mcpNames = Object.keys(this.config.mcpServers);
+    return mcpNames.map((name) => {
+      const cache = this.serverToolsCache.get(name);
+      const isConnected = this.clients.has(name);
+      return {
+        name,
+        status: isConnected ? "connected" : "disconnected",
+        tool_count: cache?.fetched ? cache.tools.length : 0,
+      };
+    });
+  }
+
+  searchMCPs(query?: string): MCPInfo[] {
+    const allMCPs = this.listMCPs();
+    if (!query) {
+      return allMCPs;
+    }
+    const lowerQuery = query.toLowerCase();
+    return allMCPs.filter((mcp) => mcp.name.toLowerCase().includes(lowerQuery));
+  }
+
+  async getMCPDetails(mcpName: string): Promise<MCPDetails | null> {
+    if (!this.config.mcpServers[mcpName]) {
+      return null;
+    }
+
+    const tools = await this.fetchToolsFromServer(mcpName);
+    const isConnected = this.clients.has(mcpName);
+
+    return {
+      name: mcpName,
+      status: isConnected ? "connected" : "disconnected",
+      tool_count: tools.length,
+      tools: tools.map((t) => ({ name: t.name, description: t.description })),
+    };
+  }
+
+  async listToolsForMCP(mcpName: string): Promise<AggregatedTool[]> {
+    if (!this.config.mcpServers[mcpName]) {
+      return [];
+    }
+    return this.fetchToolsFromServer(mcpName);
   }
 
   async disconnect(): Promise<void> {

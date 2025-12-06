@@ -21,25 +21,116 @@ async function main() {
 
   const server = new McpServer({
     name: "mcpcute",
-    version: "0.1.0",
+    version: "0.3.0",
   });
 
-  // Tool 1: Search/list available tools across all MCPs
+  // ============================================
+  // MCP-Level Operations
+  // ============================================
+
+  // Tool 1: List all MCPs
   server.tool(
-    "search_tools",
-    "Search for available tools across all aggregated MCPs. Returns tool names only.",
+    "list_mcps",
+    "List all available MCP servers with their connection status and tool counts.",
+    {},
+    async () => {
+      const mcps = clientManager.listMCPs();
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(mcps, null, 2),
+          },
+        ],
+      };
+    }
+  );
+
+  // Tool 2: Search MCPs
+  server.tool(
+    "search_mcps",
+    "Search for MCP servers by name.",
     {
-      query: z.string().optional().describe("Optional search query to filter tools by name"),
+      query: z.string().optional().describe("Keywords to search for in MCP names"),
     },
     async ({ query }) => {
-      const results = await clientManager.searchTools(query);
+      const mcps = clientManager.searchMCPs(query);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(mcps, null, 2),
+          },
+        ],
+      };
+    }
+  );
+
+  // Tool 3: Get MCP details
+  server.tool(
+    "get_mcp_details",
+    "Get detailed information about a specific MCP including its available tools.",
+    {
+      mcp_name: z.string().describe("The name of the MCP to get details for"),
+    },
+    async ({ mcp_name }) => {
+      const details = await clientManager.getMCPDetails(mcp_name);
+
+      if (!details) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `MCP not found: ${mcp_name}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(details, null, 2),
+          },
+        ],
+      };
+    }
+  );
+
+  // ============================================
+  // Tool-Level Operations
+  // ============================================
+
+  // Tool 4: List tools for a specific MCP
+  server.tool(
+    "list_tools",
+    "List all tools available in a specific MCP server.",
+    {
+      mcp_name: z.string().describe("The MCP to list tools from"),
+    },
+    async ({ mcp_name }) => {
+      const tools = await clientManager.listToolsForMCP(mcp_name);
+
+      if (tools.length === 0) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `No tools found for MCP: ${mcp_name} (MCP may not exist or has no tools)`,
+            },
+          ],
+          isError: true,
+        };
+      }
 
       return {
         content: [
           {
             type: "text" as const,
             text: JSON.stringify(
-              results.map((t) => ({ name: t.name, source: t.source })),
+              tools.map((t) => ({ name: t.name, description: t.description })),
               null,
               2
             ),
@@ -49,7 +140,33 @@ async function main() {
     }
   );
 
-  // Tool 2: Get tool details (schema, description)
+  // Tool 5: Search tools across all MCPs or within a specific MCP
+  server.tool(
+    "search_tools",
+    "Search for tools across all MCPs or within a specific MCP.",
+    {
+      query: z.string().optional().describe("Search query to filter tools by name or description"),
+      mcp_name: z.string().optional().describe("Optional: Scope search to a specific MCP"),
+    },
+    async ({ query, mcp_name }) => {
+      const results = await clientManager.searchTools(query, mcp_name);
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              results.map((t) => ({ name: t.name, source: t.source, description: t.description })),
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+  );
+
+  // Tool 6: Get tool details (schema, description)
   server.tool(
     "get_tool_details",
     "Get detailed information about a specific tool including its input schema and description.",
@@ -82,7 +199,7 @@ async function main() {
     }
   );
 
-  // Tool 3: Execute a tool
+  // Tool 7: Execute a tool
   server.tool(
     "execute_tool",
     "Execute a tool from one of the aggregated MCPs.",

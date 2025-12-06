@@ -4,11 +4,18 @@
 
 MCP aggregator - aggregate multiple MCPs behind a single interface to reduce context pollution for AI agents.
 
-Instead of exposing 20+ MCP tools directly to your AI agent, mcpcute provides just 3 tools:
+Instead of exposing 20+ MCP tools directly to your AI agent, mcpcute provides a two-level hierarchy with just 7 tools:
 
-1. **search_tools** - Search/list available tools across all aggregated MCPs (returns names only)
-2. **get_tool_details** - Get detailed schema and description for a specific tool
-3. **execute_tool** - Execute a tool with the given arguments
+### MCP-Level Operations
+1. **list_mcps** - List all available MCP servers with their connection status
+2. **search_mcps** - Search for MCP servers by name
+3. **get_mcp_details** - Get detailed info about an MCP including its tools
+
+### Tool-Level Operations
+4. **list_tools** - List all tools for a specific MCP
+5. **search_tools** - Search for tools (optionally scoped to a specific MCP)
+6. **get_tool_details** - Get detailed schema and description for a tool
+7. **execute_tool** - Execute a tool with the given arguments
 
 ## Installation
 
@@ -93,17 +100,38 @@ MCPCUTE_CONFIG=/path/to/config.json npx mcpcute
 ## How it works
 
 1. mcpcute starts instantly - no upfront connections to any MCP servers
-2. When `search_tools` is called, it lazily connects to MCP servers and caches their tool lists
-3. Connections are established on-demand and reused for subsequent calls
-4. Tool execution routes to the correct MCP server automatically
+2. Use `list_mcps` or `search_mcps` to discover available MCPs (no connections needed)
+3. Use `get_mcp_details` or `list_tools` to explore an MCP's capabilities (connects on-demand)
+4. Use `search_tools` to find tools across all MCPs or scoped to one
+5. Use `get_tool_details` to get the full schema for a tool
+6. Use `execute_tool` to run the tool
 
-This reduces the initial context from potentially hundreds of tool schemas to just 3 simple tools, and startup is instant regardless of how many MCPs you configure.
+This reduces the initial context from potentially hundreds of tool schemas to just 7 simple tools, and startup is instant regardless of how many MCPs you configure.
+
+## Workflow Examples
+
+### Discovering Linear functionality
+```
+1. search_mcps("linear") → finds "kyle-linear" MCP
+2. list_tools("kyle-linear") → shows all Linear tools
+3. get_tool_details("linear_search_issues") → see how to use it
+4. execute_tool("linear_search_issues", {...}) → run it
+```
+
+### Exploring all available MCPs
+```
+1. list_mcps() → see all configured MCPs
+2. get_mcp_details("yeego-pocketbase") → learn about this MCP
+3. list_tools("yeego-pocketbase") → see what it can do
+```
 
 ## Why mcpcute?
 
 - **Instant startup**: Lazy loading means no waiting for 20+ MCP servers to connect
-- **Reduced context pollution**: Instead of loading 50+ tool schemas into your AI's context, load just 3
+- **Two-level hierarchy**: Clear separation between MCP discovery and tool discovery
+- **Reduced context pollution**: Instead of loading 50+ tool schemas into your AI's context, load just 7
 - **Dynamic tool discovery**: AI agents can search and discover tools as needed
+- **Scoped exploration**: Explore one MCP at a time instead of being overwhelmed
 - **Unified interface**: One consistent API for all your MCP tools
 - **Easy configuration**: Simple JSON config to aggregate multiple MCP servers
 

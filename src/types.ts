@@ -21,3 +21,13 @@ export interface ToolDetails {
   inputSchema?: unknown;
   source: string;
 }
+
+export interface MCPInfo {
+  name: string;
+  status: "connected" | "disconnected";
+  tool_count: number;
+}
+
+export interface MCPDetails extends MCPInfo {
+  tools: Array<{ name: string; description?: string }>;
+}
