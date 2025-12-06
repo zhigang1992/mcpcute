@@ -32,13 +32,7 @@ async function main() {
       query: z.string().optional().describe("Optional search query to filter tools by name"),
     },
     async ({ query }) => {
-      const tools = await clientManager.listAllTools();
-
-      let results = tools;
-      if (query) {
-        const lowerQuery = query.toLowerCase();
-        results = tools.filter((t) => t.name.toLowerCase().includes(lowerQuery));
-      }
+      const results = await clientManager.searchTools(query);
 
       return {
         content: [
@@ -95,7 +89,7 @@ async function main() {
     {
       tool_name: z.string().describe("The name of the tool to execute"),
       arguments: z
-        .record(z.unknown())
+        .record(z.string(), z.any())
         .optional()
         .describe("Arguments to pass to the tool"),
     },
@@ -124,10 +118,7 @@ async function main() {
     }
   );
 
-  // Connect to all configured MCPs
-  await clientManager.connectAll();
-
-  // Start the server
+  // Start the server (lazy connection - MCPs connect on demand)
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

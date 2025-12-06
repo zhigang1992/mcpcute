@@ -1,6 +1,6 @@
 {
   "name": "mcpcute",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP aggregator - aggregate multiple MCPs behind a single interface",
   "module": "src/index.ts",
   "type": "module",
@@ -11,6 +11,28 @@
     "start": "bun run src/index.ts",
     "dev": "bun --watch run src/index.ts"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhigang1992/mcpcute.git"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "aggregator",
+    "ai",
+    "claude"
+  ],
+  "author": "Kyle Fang",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/zhigang1992/mcpcute/issues"
+  },
+  "homepage": "https://github.com/zhigang1992/mcpcute#readme",
+  "files": [
+    "src",
+    "bin",
+    "README.md"
+  ],
   "devDependencies": {
     "@types/bun": "latest"
   },
