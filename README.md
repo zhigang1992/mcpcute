@@ -110,19 +110,19 @@ This reduces the initial context from potentially hundreds of tool schemas to ju
 
 ## Workflow Examples
 
-### Discovering Linear functionality
+### Discovering filesystem tools
 ```
-1. search_mcps("linear") → finds "kyle-linear" MCP
-2. list_tools("kyle-linear") → shows all Linear tools
-3. get_tool_details("linear_search_issues") → see how to use it
-4. execute_tool("linear_search_issues", {...}) → run it
+1. search_mcps("file") → finds "filesystem" MCP
+2. list_tools("filesystem") → shows all filesystem tools
+3. get_tool_details("read_file") → see how to use it
+4. execute_tool("read_file", { path: "/tmp/example.txt" }) → run it
 ```
 
 ### Exploring all available MCPs
 ```
 1. list_mcps() → see all configured MCPs
-2. get_mcp_details("yeego-pocketbase") → learn about this MCP
-3. list_tools("yeego-pocketbase") → see what it can do
+2. get_mcp_details("fetch") → learn about this MCP
+3. list_tools("fetch") → see what it can do
 ```
 
 ## Why mcpcute?
