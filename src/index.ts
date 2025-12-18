@@ -21,7 +21,7 @@ async function main() {
 
   const server = new McpServer({
     name: "mcpcute-explicit-only",
-    version: "0.3.3",
+    version: "0.3.4",
   });
 
   // ============================================
@@ -202,17 +202,18 @@ async function main() {
   // Tool 7: Execute a tool
   server.tool(
     "execute_tool",
-    "[EXPLICIT ONLY - Do NOT use unless the user explicitly mentions 'mcpcute' or asks to execute tools via mcpcute] Execute a tool from one of the aggregated MCPs.",
+    "[EXPLICIT ONLY - Do NOT use unless the user explicitly mentions 'mcpcute' or asks to execute tools via mcpcute] Execute a tool from one of the aggregated MCPs (requires specifying both MCP and tool).",
     {
+      mcp_name: z.string().describe("The MCP server that owns the tool"),
       tool_name: z.string().describe("The name of the tool to execute"),
       arguments: z
         .record(z.string(), z.any())
         .optional()
         .describe("Arguments to pass to the tool"),
     },
-    async ({ tool_name, arguments: args }) => {
+    async ({ mcp_name, tool_name, arguments: args }) => {
       try {
-        const result = await clientManager.executeTool(tool_name, args || {});
+        const result = await clientManager.executeTool(tool_name, args || {}, mcp_name);
         return {
           content: [
             {

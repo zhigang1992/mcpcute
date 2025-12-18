@@ -434,29 +434,45 @@ export class MCPClientManager {
 
   async executeTool(
     toolName: string,
-    args: Record<string, unknown>
+    args: Record<string, unknown>,
+    specifiedServerName?: string
   ): Promise<unknown> {
-    // Find which server has this tool
-    let serverName = this.toolToServer.get(toolName);
-
-    // Check if it's a prefixed name
+    let serverName = specifiedServerName;
     let originalToolName = toolName;
-    if (!serverName) {
-      const parts = toolName.split("__");
-      if (parts.length >= 2) {
-        serverName = parts[0];
-        originalToolName = parts.slice(1).join("__");
+
+    if (serverName) {
+      if (!this.config.mcpServers[serverName]) {
+        throw new Error(`Server not found: ${serverName}`);
+      }
+    } else {
+      // Find which server has this tool
+      serverName = this.toolToServer.get(toolName);
+
+      if (!serverName) {
+        const parts = toolName.split("__");
+        if (parts.length >= 2) {
+          serverName = parts[0];
+          originalToolName = parts.slice(1).join("__");
+        }
+      }
+
+      // If still not found, try to list all tools first
+      if (!serverName) {
+        await this.listAllTools();
+        serverName = this.toolToServer.get(toolName);
+      }
+
+      if (!serverName) {
+        throw new Error(`Tool not found: ${toolName}`);
       }
     }
 
-    // If still not found, try to list all tools first
     if (!serverName) {
-      await this.listAllTools();
-      serverName = this.toolToServer.get(toolName);
+      throw new Error(`Server not resolved for tool: ${toolName}`);
     }
 
-    if (!serverName) {
-      throw new Error(`Tool not found: ${toolName}`);
+    if (toolName.startsWith(`${serverName}__`)) {
+      originalToolName = toolName.slice(serverName.length + 2);
     }
 
     const serverConfig = this.config.mcpServers[serverName];
@@ -467,17 +483,10 @@ export class MCPClientManager {
     // Connect to the server if not already connected
     const { client } = await this.connectToServer(serverName, serverConfig);
 
-    // Handle prefixed tool names - extract original name
-    if (toolName.startsWith(`${serverName}__`)) {
-      originalToolName = toolName.slice(serverName.length + 2);
-    }
-
-    const result = await client.callTool({
+    return client.callTool({
       name: originalToolName,
       arguments: args,
     });
-
-    return result;
   }
 
   // MCP-level operations

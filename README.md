@@ -15,7 +15,7 @@ Instead of exposing 20+ MCP tools directly to your AI agent, mcpcute provides a 
 4. **list_tools** - List all tools for a specific MCP
 5. **search_tools** - Search for tools (optionally scoped to a specific MCP)
 6. **get_tool_details** - Get detailed schema and description for a tool
-7. **execute_tool** - Execute a tool with the given arguments
+7. **execute_tool** - Execute a tool from a chosen MCP (requires both MCP and tool names plus arguments)
 
 ## Installation
 
@@ -104,7 +104,7 @@ MCPCUTE_CONFIG=/path/to/config.json npx mcpcute
 3. Use `get_mcp_details` or `list_tools` to explore an MCP's capabilities (connects on-demand)
 4. Use `search_tools` to find tools across all MCPs or scoped to one
 5. Use `get_tool_details` to get the full schema for a tool
-6. Use `execute_tool` to run the tool
+6. Use `execute_tool` (with `mcp_name`, `tool_name`, and `arguments`) to run the tool
 
 This reduces the initial context from potentially hundreds of tool schemas to just 7 simple tools, and startup is instant regardless of how many MCPs you configure.
 
@@ -124,7 +124,7 @@ Override the location with `MCPCUTE_CACHE_DIR`. Cached entries are automatically
 1. search_mcps("file") → finds "filesystem" MCP
 2. list_tools("filesystem") → shows all filesystem tools
 3. get_tool_details("read_file") → see how to use it
-4. execute_tool("read_file", { path: "/tmp/example.txt" }) → run it
+4. execute_tool({ mcp_name: "filesystem", tool_name: "read_file", arguments: { path: "/tmp/example.txt" } }) → run it
 ```
 
 ### Exploring all available MCPs
