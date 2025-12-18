@@ -21,7 +21,7 @@ async function main() {
 
   const server = new McpServer({
     name: "mcpcute-explicit-only",
-    version: "0.3.2",
+    version: "0.3.3",
   });
 
   // ============================================
