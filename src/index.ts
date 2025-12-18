@@ -20,8 +20,8 @@ async function main() {
   const clientManager = new MCPClientManager(config);
 
   const server = new McpServer({
-    name: "mcpcute",
-    version: "0.3.0",
+    name: "mcpcute-explicit-only",
+    version: "0.3.2",
   });
 
   // ============================================
@@ -31,7 +31,7 @@ async function main() {
   // Tool 1: List all MCPs
   server.tool(
     "list_mcps",
-    "List all available MCP servers with their connection status and tool counts.",
+    "[EXPLICIT ONLY - Do NOT use unless the user explicitly mentions 'mcpcute' or asks to manage/list MCP servers] List all available MCP servers with their connection status and tool counts.",
     {},
     async () => {
       const mcps = clientManager.listMCPs();
@@ -49,7 +49,7 @@ async function main() {
   // Tool 2: Search MCPs
   server.tool(
     "search_mcps",
-    "Search for MCP servers by name.",
+    "[EXPLICIT ONLY - Do NOT use unless the user explicitly mentions 'mcpcute' or asks to manage/search MCP servers] Search for MCP servers by name.",
     {
       query: z.string().optional().describe("Keywords to search for in MCP names"),
     },
@@ -69,7 +69,7 @@ async function main() {
   // Tool 3: Get MCP details
   server.tool(
     "get_mcp_details",
-    "Get detailed information about a specific MCP including its available tools.",
+    "[EXPLICIT ONLY - Do NOT use unless the user explicitly mentions 'mcpcute' or asks about MCP server details] Get detailed information about a specific MCP including its available tools.",
     {
       mcp_name: z.string().describe("The name of the MCP to get details for"),
     },
@@ -106,7 +106,7 @@ async function main() {
   // Tool 4: List tools for a specific MCP
   server.tool(
     "list_tools",
-    "List all tools available in a specific MCP server.",
+    "[EXPLICIT ONLY - Do NOT use unless the user explicitly mentions 'mcpcute' or asks to list tools in an MCP] List all tools available in a specific MCP server.",
     {
       mcp_name: z.string().describe("The MCP to list tools from"),
     },
@@ -143,7 +143,7 @@ async function main() {
   // Tool 5: Search tools across all MCPs or within a specific MCP
   server.tool(
     "search_tools",
-    "Search for tools across all MCPs or within a specific MCP.",
+    "[EXPLICIT ONLY - Do NOT use unless the user explicitly mentions 'mcpcute' or asks to search tools across MCPs] Search for tools across all MCPs or within a specific MCP.",
     {
       query: z.string().optional().describe("Search query to filter tools by name or description"),
       mcp_name: z.string().optional().describe("Optional: Scope search to a specific MCP"),
@@ -169,7 +169,7 @@ async function main() {
   // Tool 6: Get tool details (schema, description)
   server.tool(
     "get_tool_details",
-    "Get detailed information about a specific tool including its input schema and description.",
+    "[EXPLICIT ONLY - Do NOT use unless the user explicitly mentions 'mcpcute' or asks for tool details/schema] Get detailed information about a specific tool including its input schema and description.",
     {
       tool_name: z.string().describe("The name of the tool to get details for"),
     },
@@ -202,7 +202,7 @@ async function main() {
   // Tool 7: Execute a tool
   server.tool(
     "execute_tool",
-    "Execute a tool from one of the aggregated MCPs.",
+    "[EXPLICIT ONLY - Do NOT use unless the user explicitly mentions 'mcpcute' or asks to execute tools via mcpcute] Execute a tool from one of the aggregated MCPs.",
     {
       tool_name: z.string().describe("The name of the tool to execute"),
       arguments: z
