@@ -108,6 +108,15 @@ MCPCUTE_CONFIG=/path/to/config.json npx mcpcute
 
 This reduces the initial context from potentially hundreds of tool schemas to just 7 simple tools, and startup is instant regardless of how many MCPs you configure.
 
+## Cache
+
+mcpcute persists the discovered tool list for each MCP to disk so future runs can answer tool discovery requests without reconnecting to every server. The cache lives in:
+
+- macOS/Linux: `${XDG_CACHE_HOME:-~/.cache}/mcpcute`
+- Windows: `%LOCALAPPDATA%/mcpcute/cache`
+
+Override the location with `MCPCUTE_CACHE_DIR`. Cached entries are automatically invalidated whenever the command, arguments, or environment for a server change in `mcpcute.config.json`.
+
 ## Workflow Examples
 
 ### Discovering filesystem tools

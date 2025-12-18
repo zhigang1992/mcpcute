@@ -1,16 +1,27 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import os from "node:os";
 import type { MCPConfig, MCPServerConfig, AggregatedTool, ToolDetails, MCPInfo, MCPDetails } from "./types.ts";
 
 interface ConnectedClient {
   client: Client;
   transport: StdioClientTransport;
   name: string;
+  configSignature: string;
 }
 
 interface ServerToolsCache {
   tools: AggregatedTool[];
   fetched: boolean;
+  configSignature: string;
+}
+
+interface PersistedServerCacheFile {
+  configSignature: string;
+  tools: AggregatedTool[];
+  fetchedAt?: number;
 }
 
 export class MCPClientManager {
@@ -19,12 +30,167 @@ export class MCPClientManager {
   private serverToolsCache: Map<string, ServerToolsCache> = new Map();
   private toolToServer: Map<string, string> = new Map();
   private toolsAggregated: boolean = false;
+  private cacheDir: string;
 
   constructor(config: MCPConfig) {
     this.config = config;
+    this.cacheDir = this.resolveCacheDir();
+    this.ensureCacheDirExists();
     // Initialize cache entries for all servers (not connected yet)
-    for (const serverName of Object.keys(config.mcpServers)) {
-      this.serverToolsCache.set(serverName, { tools: [], fetched: false });
+    for (const [serverName, serverConfig] of Object.entries(config.mcpServers)) {
+      const configSignature = this.getServerConfigSignature(serverConfig);
+      const persisted = this.loadCacheFromDisk(serverName);
+      if (persisted && persisted.configSignature === configSignature) {
+        this.serverToolsCache.set(serverName, {
+          tools: persisted.tools,
+          fetched: true,
+          configSignature,
+        });
+      } else {
+        if (persisted) {
+          this.removeCacheFile(serverName);
+        }
+        this.serverToolsCache.set(serverName, {
+          tools: [],
+          fetched: false,
+          configSignature,
+        });
+      }
+    }
+  }
+
+  private resolveCacheDir(): string {
+    if (process.env.MCPCUTE_CACHE_DIR) {
+      return process.env.MCPCUTE_CACHE_DIR;
+    }
+
+    if (process.platform === "win32") {
+      const base = process.env.LOCALAPPDATA || join(os.homedir(), "AppData", "Local");
+      return join(base, "mcpcute", "cache");
+    }
+
+    const base = process.env.XDG_CACHE_HOME || join(os.homedir(), ".cache");
+    return join(base, "mcpcute");
+  }
+
+  private ensureCacheDirExists(): void {
+    try {
+      mkdirSync(this.cacheDir, { recursive: true });
+    } catch (error) {
+      console.error(
+        `[mcpcute] Failed to initialize cache directory ${this.cacheDir}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+  }
+
+  private sanitizeServerName(name: string): string {
+    return name.replace(/[^a-zA-Z0-9-_]/g, "_");
+  }
+
+  private getCacheFilePath(serverName: string): string {
+    return join(this.cacheDir, `${this.sanitizeServerName(serverName)}.json`);
+  }
+
+  private loadCacheFromDisk(serverName: string): PersistedServerCacheFile | null {
+    const cachePath = this.getCacheFilePath(serverName);
+    if (!existsSync(cachePath)) {
+      return null;
+    }
+
+    try {
+      const raw = readFileSync(cachePath, "utf-8");
+      return JSON.parse(raw) as PersistedServerCacheFile;
+    } catch (error) {
+      console.error(
+        `[mcpcute] Failed to read cache for ${serverName}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+      return null;
+    }
+  }
+
+  private persistServerCache(serverName: string, cache: ServerToolsCache): void {
+    if (!cache.fetched) {
+      return;
+    }
+
+    const cachePath = this.getCacheFilePath(serverName);
+    const payload = JSON.stringify(
+      {
+        configSignature: cache.configSignature,
+        tools: cache.tools,
+        fetchedAt: Date.now(),
+      },
+      null,
+      2
+    );
+
+    try {
+      writeFileSync(cachePath, payload, "utf-8");
+    } catch (error) {
+      console.error(
+        `[mcpcute] Failed to write cache for ${serverName}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+  }
+
+  private removeCacheFile(serverName: string): void {
+    const cachePath = this.getCacheFilePath(serverName);
+    try {
+      unlinkSync(cachePath);
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code !== "ENOENT") {
+        console.error(
+          `[mcpcute] Failed to remove cache for ${serverName}:`,
+          err.message
+        );
+      }
+    }
+  }
+
+  private getServerConfigSignature(serverConfig?: MCPServerConfig): string {
+    if (!serverConfig) {
+      return "missing";
+    }
+
+    const sortedEnv = serverConfig.env
+      ? Object.fromEntries(
+          Object.entries(serverConfig.env).sort(([a], [b]) => a.localeCompare(b))
+        )
+      : undefined;
+
+    return JSON.stringify({
+      command: serverConfig.command,
+      args: serverConfig.args ?? [],
+      env: sortedEnv,
+    });
+  }
+
+  private markAggregationStale(): void {
+    this.toolsAggregated = false;
+    this.toolToServer.clear();
+  }
+
+  private async disconnectClient(name: string): Promise<void> {
+    const connection = this.clients.get(name);
+    if (!connection) {
+      return;
+    }
+
+    try {
+      await connection.client.close();
+      await connection.transport.close();
+      console.error(`[mcpcute] Disconnected from ${name}`);
+    } catch (error) {
+      console.error(
+        `[mcpcute] Error disconnecting from ${name}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+    } finally {
+      this.clients.delete(name);
     }
   }
 
@@ -32,10 +198,15 @@ export class MCPClientManager {
     name: string,
     serverConfig: MCPServerConfig
   ): Promise<ConnectedClient> {
+    const configSignature = this.getServerConfigSignature(serverConfig);
+
     // Return existing connection if available
     const existing = this.clients.get(name);
     if (existing) {
-      return existing;
+      if (existing.configSignature === configSignature) {
+        return existing;
+      }
+      await this.disconnectClient(name);
     }
 
     console.error(`[mcpcute] Connecting to MCP server: ${name}...`);
@@ -53,7 +224,7 @@ export class MCPClientManager {
 
     await client.connect(transport);
 
-    const connectedClient = { client, transport, name };
+    const connectedClient: ConnectedClient = { client, transport, name, configSignature };
     this.clients.set(name, connectedClient);
 
     console.error(`[mcpcute] Connected to MCP server: ${name}`);
@@ -62,14 +233,36 @@ export class MCPClientManager {
   }
 
   private async fetchToolsFromServer(serverName: string): Promise<AggregatedTool[]> {
-    const cache = this.serverToolsCache.get(serverName);
-    if (cache?.fetched) {
-      return cache.tools;
-    }
-
     const serverConfig = this.config.mcpServers[serverName];
     if (!serverConfig) {
       return [];
+    }
+
+    const configSignature = this.getServerConfigSignature(serverConfig);
+    let cache = this.serverToolsCache.get(serverName);
+
+    if (!cache) {
+      const persisted = this.loadCacheFromDisk(serverName);
+      if (persisted && persisted.configSignature === configSignature) {
+        cache = { tools: persisted.tools, fetched: true, configSignature };
+      } else {
+        this.markAggregationStale();
+        cache = { tools: [], fetched: false, configSignature };
+        if (persisted) {
+          this.removeCacheFile(serverName);
+        }
+      }
+      this.serverToolsCache.set(serverName, cache);
+    } else if (cache.configSignature !== configSignature) {
+      await this.disconnectClient(serverName);
+      this.markAggregationStale();
+      this.removeCacheFile(serverName);
+      cache = { tools: [], fetched: false, configSignature };
+      this.serverToolsCache.set(serverName, cache);
+    }
+
+    if (cache.fetched) {
+      return cache.tools;
     }
 
     try {
@@ -83,7 +276,9 @@ export class MCPClientManager {
         source: serverName,
       }));
 
-      this.serverToolsCache.set(serverName, { tools, fetched: true });
+      const updatedCache: ServerToolsCache = { tools, fetched: true, configSignature };
+      this.serverToolsCache.set(serverName, updatedCache);
+      this.persistServerCache(serverName, updatedCache);
 
       return tools;
     } catch (error) {
@@ -91,7 +286,9 @@ export class MCPClientManager {
         `[mcpcute] Failed to fetch tools from ${serverName}:`,
         error instanceof Error ? error.message : String(error)
       );
-      this.serverToolsCache.set(serverName, { tools: [], fetched: true });
+      const failedCache: ServerToolsCache = { tools: [], fetched: true, configSignature };
+      this.serverToolsCache.set(serverName, failedCache);
+      this.persistServerCache(serverName, failedCache);
       return [];
     }
   }
@@ -331,18 +528,9 @@ export class MCPClientManager {
   }
 
   async disconnect(): Promise<void> {
-    for (const [name, { client, transport }] of this.clients) {
-      try {
-        await client.close();
-        await transport.close();
-        console.error(`[mcpcute] Disconnected from ${name}`);
-      } catch (error) {
-        console.error(
-          `[mcpcute] Error disconnecting from ${name}:`,
-          error instanceof Error ? error.message : String(error)
-        );
-      }
-    }
-    this.clients.clear();
+    const disconnects = Array.from(this.clients.keys()).map((name) =>
+      this.disconnectClient(name)
+    );
+    await Promise.all(disconnects);
   }
 }
