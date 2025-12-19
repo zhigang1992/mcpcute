@@ -306,7 +306,7 @@ export class MCPClientManager {
     // Handle collisions by prefixing with server name
     for (const [name, tools] of toolsByName) {
       if (tools.length === 1) {
-        this.toolToServer.set(name, tools[0].source);
+        this.toolToServer.set(name, tools[0]!.source);
       } else {
         // Collision - prefix all with server name
         for (const tool of tools) {
