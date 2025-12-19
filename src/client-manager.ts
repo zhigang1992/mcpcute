@@ -495,10 +495,8 @@ export class MCPClientManager {
     const mcpNames = Object.keys(this.config.mcpServers);
     return mcpNames.map((name) => {
       const cache = this.serverToolsCache.get(name);
-      const isConnected = this.clients.has(name);
       return {
         name,
-        status: isConnected ? "connected" : "disconnected",
         tool_count: cache?.fetched ? cache.tools.length : 0,
       };
     });
@@ -519,11 +517,9 @@ export class MCPClientManager {
     }
 
     const tools = await this.fetchToolsFromServer(mcpName);
-    const isConnected = this.clients.has(mcpName);
 
     return {
       name: mcpName,
-      status: isConnected ? "connected" : "disconnected",
       tool_count: tools.length,
       tools: tools.map((t) => ({ name: t.name, description: t.description })),
     };

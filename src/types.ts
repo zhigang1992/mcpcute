@@ -24,7 +24,6 @@ export interface ToolDetails {
 
 export interface MCPInfo {
   name: string;
-  status: "connected" | "disconnected";
   tool_count: number;
 }
 
