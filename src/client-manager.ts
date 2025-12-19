@@ -286,9 +286,8 @@ export class MCPClientManager {
         `[mcpcute] Failed to fetch tools from ${serverName}:`,
         error instanceof Error ? error.message : String(error)
       );
-      const failedCache: ServerToolsCache = { tools: [], fetched: true, configSignature };
-      this.serverToolsCache.set(serverName, failedCache);
-      this.persistServerCache(serverName, failedCache);
+      // Don't cache failed connections - the server might come back later
+      // Keep the existing cache entry as unfetched so we retry next time
       return [];
     }
   }
@@ -493,13 +492,9 @@ export class MCPClientManager {
 
   listMCPs(): MCPInfo[] {
     const mcpNames = Object.keys(this.config.mcpServers);
-    return mcpNames.map((name) => {
-      const cache = this.serverToolsCache.get(name);
-      return {
-        name,
-        tool_count: cache?.fetched ? cache.tools.length : 0,
-      };
-    });
+    return mcpNames.map((name) => ({
+      name,
+    }));
   }
 
   searchMCPs(query?: string): MCPInfo[] {

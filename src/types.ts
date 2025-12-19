@@ -24,9 +24,9 @@ export interface ToolDetails {
 
 export interface MCPInfo {
   name: string;
-  tool_count: number;
 }
 
 export interface MCPDetails extends MCPInfo {
+  tool_count: number;
   tools: Array<{ name: string; description?: string }>;
 }
