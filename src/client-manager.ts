@@ -491,9 +491,9 @@ export class MCPClientManager {
   // MCP-level operations
 
   listMCPs(): MCPInfo[] {
-    const mcpNames = Object.keys(this.config.mcpServers);
-    return mcpNames.map((name) => ({
+    return Object.entries(this.config.mcpServers).map(([name, config]) => ({
       name,
+      description: config.description,
     }));
   }
 

@@ -2,6 +2,7 @@ export interface MCPServerConfig {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  description?: string;
 }
 
 export interface MCPConfig {
@@ -24,6 +25,7 @@ export interface ToolDetails {
 
 export interface MCPInfo {
   name: string;
+  description?: string;
 }
 
 export interface MCPDetails extends MCPInfo {
