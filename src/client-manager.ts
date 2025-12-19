@@ -16,12 +16,14 @@ interface ServerToolsCache {
   tools: AggregatedTool[];
   fetched: boolean;
   configSignature: string;
+  serverDescription?: string;
 }
 
 interface PersistedServerCacheFile {
   configSignature: string;
   tools: AggregatedTool[];
   fetchedAt?: number;
+  serverDescription?: string;
 }
 
 export class MCPClientManager {
@@ -45,6 +47,7 @@ export class MCPClientManager {
           tools: persisted.tools,
           fetched: true,
           configSignature,
+          serverDescription: persisted.serverDescription,
         });
       } else {
         if (persisted) {
@@ -121,6 +124,7 @@ export class MCPClientManager {
         configSignature: cache.configSignature,
         tools: cache.tools,
         fetchedAt: Date.now(),
+        serverDescription: cache.serverDescription,
       },
       null,
       2
@@ -268,6 +272,8 @@ export class MCPClientManager {
     try {
       const { client } = await this.connectToServer(serverName, serverConfig);
       const response = await client.listTools();
+      // Server info may include description per MCP spec (not yet in SDK types)
+      const serverInfo = client.getServerVersion() as { description?: string } | undefined;
 
       const tools: AggregatedTool[] = response.tools.map((tool) => ({
         name: tool.name,
@@ -276,7 +282,12 @@ export class MCPClientManager {
         source: serverName,
       }));
 
-      const updatedCache: ServerToolsCache = { tools, fetched: true, configSignature };
+      const updatedCache: ServerToolsCache = {
+        tools,
+        fetched: true,
+        configSignature,
+        serverDescription: serverInfo?.description,
+      };
       this.serverToolsCache.set(serverName, updatedCache);
       this.persistServerCache(serverName, updatedCache);
 
@@ -491,10 +502,12 @@ export class MCPClientManager {
   // MCP-level operations
 
   listMCPs(): MCPInfo[] {
-    return Object.entries(this.config.mcpServers).map(([name, config]) => ({
-      name,
-      description: config.description,
-    }));
+    return Object.entries(this.config.mcpServers).map(([name, config]) => {
+      const cache = this.serverToolsCache.get(name);
+      // Prefer server-provided description, fall back to config description
+      const description = cache?.serverDescription ?? config.description;
+      return { name, description };
+    });
   }
 
   searchMCPs(query?: string): MCPInfo[] {
@@ -507,14 +520,18 @@ export class MCPClientManager {
   }
 
   async getMCPDetails(mcpName: string): Promise<MCPDetails | null> {
-    if (!this.config.mcpServers[mcpName]) {
+    const config = this.config.mcpServers[mcpName];
+    if (!config) {
       return null;
     }
 
     const tools = await this.fetchToolsFromServer(mcpName);
+    const cache = this.serverToolsCache.get(mcpName);
+    const description = cache?.serverDescription ?? config.description;
 
     return {
       name: mcpName,
+      description,
       tool_count: tools.length,
       tools: tools.map((t) => ({ name: t.name, description: t.description })),
     };
