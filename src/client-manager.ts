@@ -28,18 +28,24 @@ interface PersistedServerCacheFile {
 
 export class MCPClientManager {
   private config: MCPConfig;
+  private configPath: string;
   private clients: Map<string, ConnectedClient> = new Map();
   private serverToolsCache: Map<string, ServerToolsCache> = new Map();
   private toolToServer: Map<string, string> = new Map();
   private toolsAggregated: boolean = false;
   private cacheDir: string;
 
-  constructor(config: MCPConfig) {
+  constructor(config: MCPConfig, configPath: string) {
     this.config = config;
+    this.configPath = configPath;
     this.cacheDir = this.resolveCacheDir();
     this.ensureCacheDirExists();
+    this.initializeServerCaches();
+  }
+
+  private initializeServerCaches(): void {
     // Initialize cache entries for all servers (not connected yet)
-    for (const [serverName, serverConfig] of Object.entries(config.mcpServers)) {
+    for (const [serverName, serverConfig] of Object.entries(this.config.mcpServers)) {
       const configSignature = this.getServerConfigSignature(serverConfig);
       const persisted = this.loadCacheFromDisk(serverName);
       if (persisted && persisted.configSignature === configSignature) {
@@ -59,6 +65,60 @@ export class MCPClientManager {
           configSignature,
         });
       }
+    }
+  }
+
+  /**
+   * Reload config from disk and handle any changes.
+   * Returns true if config changed, false otherwise.
+   */
+  async reloadConfig(): Promise<boolean> {
+    try {
+      const raw = readFileSync(this.configPath, "utf-8");
+      const newConfig = JSON.parse(raw) as MCPConfig;
+
+      // Check if config actually changed by comparing server signatures
+      let configChanged = false;
+
+      // Check for removed servers
+      for (const serverName of Object.keys(this.config.mcpServers)) {
+        if (!newConfig.mcpServers[serverName]) {
+          configChanged = true;
+          await this.disconnectClient(serverName);
+          this.serverToolsCache.delete(serverName);
+          this.removeCacheFile(serverName);
+        }
+      }
+
+      // Check for new or changed servers
+      for (const [serverName, serverConfig] of Object.entries(newConfig.mcpServers)) {
+        const newSignature = this.getServerConfigSignature(serverConfig);
+        const oldConfig = this.config.mcpServers[serverName];
+        const oldSignature = this.getServerConfigSignature(oldConfig);
+
+        if (newSignature !== oldSignature) {
+          configChanged = true;
+          // Disconnect old connection if exists
+          await this.disconnectClient(serverName);
+          // Invalidate cache
+          this.serverToolsCache.delete(serverName);
+          this.removeCacheFile(serverName);
+          this.markAggregationStale();
+        }
+      }
+
+      if (configChanged) {
+        this.config = newConfig;
+        this.initializeServerCaches();
+      }
+
+      return configChanged;
+    } catch (error) {
+      console.error(
+        `[mcpcute] Failed to reload config:`,
+        error instanceof Error ? error.message : String(error)
+      );
+      return false;
     }
   }
 

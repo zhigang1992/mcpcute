@@ -17,7 +17,7 @@ async function loadConfig(): Promise<MCPConfig> {
 
 async function main() {
   const config = await loadConfig();
-  const clientManager = new MCPClientManager(config);
+  const clientManager = new MCPClientManager(config, CONFIG_PATH);
 
   const server = new McpServer({
     name: "mcpcute-explicit-only",
@@ -100,10 +100,36 @@ async function main() {
   );
 
   // ============================================
+  // Configuration Operations
+  // ============================================
+
+  // Tool 4: Reload configuration
+  server.tool(
+    "reload_config",
+    "[EXPLICIT ONLY - Do NOT use unless the user explicitly asks to reload mcpcute config] Reload the mcpcute configuration file from disk. Use this after updating the config file to pick up changes like new MCP servers or updated versions.",
+    {},
+    async () => {
+      const changed = await clientManager.reloadConfig();
+      const mcps = clientManager.listMCPs();
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: changed
+              ? `Configuration reloaded. Changes detected and applied.\n\nCurrent MCPs:\n${JSON.stringify(mcps, null, 2)}`
+              : `Configuration reloaded. No changes detected.\n\nCurrent MCPs:\n${JSON.stringify(mcps, null, 2)}`,
+          },
+        ],
+      };
+    }
+  );
+
+  // ============================================
   // Tool-Level Operations
   // ============================================
 
-  // Tool 4: List tools for a specific MCP
+  // Tool 5: List tools for a specific MCP
   server.tool(
     "list_tools",
     "[EXPLICIT ONLY - Do NOT use unless the user explicitly mentions 'mcpcute' or asks to list tools in an MCP] List all tools available in a specific MCP server.",
