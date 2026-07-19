@@ -1,6 +1,6 @@
 {
   "name": "mcpcute",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "description": "MCP aggregator - aggregate multiple MCPs behind a single interface",
   "module": "src/index.ts",
   "type": "module",

@@ -241,6 +241,17 @@ export class MCPClientManager {
   }
 
   private async disconnectClient(name: string): Promise<void> {
+    // If a connect is still in flight, wait for it so we can close the resulting
+    // client/transport instead of orphaning the newly spawned child process.
+    const inFlight = this.connecting.get(name);
+    if (inFlight) {
+      try {
+        await inFlight;
+      } catch {
+        // Connect failed; nothing further to close for that attempt.
+      }
+    }
+
     const connection = this.clients.get(name);
     // Always drop the map entry first so concurrent callers don't reuse a closing client.
     this.clients.delete(name);
@@ -251,29 +262,50 @@ export class MCPClientManager {
 
     try {
       await connection.client.close();
-      await connection.transport.close();
-      console.error(`[mcpcute] Disconnected from ${name}`);
     } catch (error) {
       console.error(
-        `[mcpcute] Error disconnecting from ${name}:`,
+        `[mcpcute] Error closing client for ${name}:`,
         error instanceof Error ? error.message : String(error)
       );
+    } finally {
+      // Always close the transport so the stdio child is not leaked when client.close() throws.
+      try {
+        await connection.transport.close();
+        console.error(`[mcpcute] Disconnected from ${name}`);
+      } catch (error) {
+        console.error(
+          `[mcpcute] Error closing transport for ${name}:`,
+          error instanceof Error ? error.message : String(error)
+        );
+      }
     }
   }
 
   /**
    * Detect dead stdio transports / child process exits.
    * These are recoverable by dropping the client and connecting again.
+   *
+   * Prefer precise MCP SDK / OS signals. Broader phrases like "Not connected"
+   * only match as whole messages so a tool error that happens to contain that
+   * substring does not trigger an unwanted reconnect+retry.
    */
   private isTransportError(error: unknown): boolean {
     const message = error instanceof Error ? error.message : String(error);
-    return (
-      message.includes("Connection closed") ||
+    const trimmed = message.trim();
+
+    if (
       message.includes("MCP error -32000") ||
-      message.includes("Not connected") ||
-      message.includes("Transport is closed") ||
-      message.includes("transport was closed") ||
+      message.includes("Connection closed") ||
       /EPIPE|ECONNRESET|ERR_STREAM_DESTROYED/.test(message)
+    ) {
+      return true;
+    }
+
+    // MCP SDK client messages when the stdio session is already gone
+    return (
+      /^(Error:\s*)?Not connected\.?$/i.test(trimmed) ||
+      /^(Error:\s*)?Transport(?: is)? closed\.?$/i.test(trimmed) ||
+      /^(Error:\s*)?transport was closed\.?$/i.test(trimmed)
     );
   }
 
@@ -371,6 +403,11 @@ export class MCPClientManager {
 
   /**
    * Run an operation against a connected server, reconnecting once on transport death.
+   *
+   * Note: a transport error mid-call shifts delivery from at-most-once to at-least-once —
+   * if the backend already applied a side-effecting tool (e.g. telegram messages_sendText)
+   * before the stdio session dropped, the single retry may double-execute it. This matches
+   * typical MCP client reconnect behavior; prefer idempotent tools or accept rare duplicates.
    */
   private async withServerClient<T>(
     serverName: string,
@@ -387,7 +424,7 @@ export class MCPClientManager {
       }
 
       console.error(
-        `[mcpcute] Connection to ${serverName} lost (${error instanceof Error ? error.message : String(error)}), reconnecting...`
+        `[mcpcute] Connection to ${serverName} lost (${error instanceof Error ? error.message : String(error)}), reconnecting once (at-least-once retry)...`
       );
       await this.disconnectClient(serverName);
 
@@ -705,6 +742,20 @@ export class MCPClientManager {
   }
 
   async disconnect(): Promise<void> {
+    // Drain in-flight connects first so their children are registered (or failed)
+    // before we close everything — otherwise a connect finishing after this returns
+    // can leave an orphaned stdio process.
+    const inFlight = Array.from(this.connecting.values());
+    await Promise.all(
+      inFlight.map(async (promise) => {
+        try {
+          await promise;
+        } catch {
+          // Connect failed; nothing to do.
+        }
+      })
+    );
+
     const disconnects = Array.from(this.clients.keys()).map((name) =>
       this.disconnectClient(name)
     );
