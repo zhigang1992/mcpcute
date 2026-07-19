@@ -30,6 +30,8 @@ export class MCPClientManager {
   private config: MCPConfig;
   private configPath: string;
   private clients: Map<string, ConnectedClient> = new Map();
+  /** In-flight connect promises so concurrent callers share one spawn. */
+  private connecting: Map<string, Promise<ConnectedClient>> = new Map();
   private serverToolsCache: Map<string, ServerToolsCache> = new Map();
   private toolToServer: Map<string, string> = new Map();
   private toolsAggregated: boolean = false;
@@ -240,6 +242,9 @@ export class MCPClientManager {
 
   private async disconnectClient(name: string): Promise<void> {
     const connection = this.clients.get(name);
+    // Always drop the map entry first so concurrent callers don't reuse a closing client.
+    this.clients.delete(name);
+
     if (!connection) {
       return;
     }
@@ -253,9 +258,23 @@ export class MCPClientManager {
         `[mcpcute] Error disconnecting from ${name}:`,
         error instanceof Error ? error.message : String(error)
       );
-    } finally {
-      this.clients.delete(name);
     }
+  }
+
+  /**
+   * Detect dead stdio transports / child process exits.
+   * These are recoverable by dropping the client and connecting again.
+   */
+  private isTransportError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return (
+      message.includes("Connection closed") ||
+      message.includes("MCP error -32000") ||
+      message.includes("Not connected") ||
+      message.includes("Transport is closed") ||
+      message.includes("transport was closed") ||
+      /EPIPE|ECONNRESET|ERR_STREAM_DESTROYED/.test(message)
+    );
   }
 
   private async connectToServer(
@@ -264,36 +283,117 @@ export class MCPClientManager {
   ): Promise<ConnectedClient> {
     const configSignature = this.getServerConfigSignature(serverConfig);
 
-    // Return existing connection if available
-    const existing = this.clients.get(name);
-    if (existing) {
-      if (existing.configSignature === configSignature) {
+    // Loop so concurrent callers can join an in-flight connect, and so a failed
+    // connect can be retried by a later leader without double-spawning.
+    while (true) {
+      const existing = this.clients.get(name);
+      if (existing?.configSignature === configSignature) {
         return existing;
       }
-      await this.disconnectClient(name);
+
+      const inFlight = this.connecting.get(name);
+      if (inFlight) {
+        try {
+          const connection = await inFlight;
+          if (
+            connection.configSignature === configSignature &&
+            this.clients.get(name) === connection
+          ) {
+            return connection;
+          }
+          // Stale result — loop and reassess
+        } catch {
+          // Previous connect failed; loop and try to become the new leader
+        }
+        continue;
+      }
+
+      // Config mismatch or leftover dead entry — tear down before reconnecting
+      if (this.clients.has(name)) {
+        await this.disconnectClient(name);
+        continue;
+      }
+
+      // Claim leadership synchronously (no await between has-check and set).
+      if (this.connecting.has(name)) {
+        continue;
+      }
+
+      const connectPromise = (async (): Promise<ConnectedClient> => {
+        console.error(`[mcpcute] Connecting to MCP server: ${name}...`);
+
+        const transport = new StdioClientTransport({
+          command: serverConfig.command,
+          args: serverConfig.args,
+          env: { ...process.env, ...serverConfig.env } as Record<string, string>,
+        });
+
+        const client = new Client({
+          name: `mcpcute-client-${name}`,
+          version: "0.1.0",
+        });
+
+        try {
+          await client.connect(transport);
+        } catch (error) {
+          try {
+            await transport.close();
+          } catch {
+            // ignore cleanup errors on failed connect
+          }
+          throw error;
+        }
+
+        const connectedClient: ConnectedClient = {
+          client,
+          transport,
+          name,
+          configSignature,
+        };
+        this.clients.set(name, connectedClient);
+
+        console.error(`[mcpcute] Connected to MCP server: ${name}`);
+
+        return connectedClient;
+      })();
+
+      this.connecting.set(name, connectPromise);
+
+      try {
+        return await connectPromise;
+      } finally {
+        if (this.connecting.get(name) === connectPromise) {
+          this.connecting.delete(name);
+        }
+      }
     }
+  }
 
-    console.error(`[mcpcute] Connecting to MCP server: ${name}...`);
+  /**
+   * Run an operation against a connected server, reconnecting once on transport death.
+   */
+  private async withServerClient<T>(
+    serverName: string,
+    serverConfig: MCPServerConfig,
+    operation: (client: Client) => Promise<T>
+  ): Promise<T> {
+    const { client } = await this.connectToServer(serverName, serverConfig);
 
-    const transport = new StdioClientTransport({
-      command: serverConfig.command,
-      args: serverConfig.args,
-      env: { ...process.env, ...serverConfig.env } as Record<string, string>,
-    });
+    try {
+      return await operation(client);
+    } catch (error) {
+      if (!this.isTransportError(error)) {
+        throw error;
+      }
 
-    const client = new Client({
-      name: `mcpcute-client-${name}`,
-      version: "0.1.0",
-    });
+      console.error(
+        `[mcpcute] Connection to ${serverName} lost (${error instanceof Error ? error.message : String(error)}), reconnecting...`
+      );
+      await this.disconnectClient(serverName);
 
-    await client.connect(transport);
-
-    const connectedClient: ConnectedClient = { client, transport, name, configSignature };
-    this.clients.set(name, connectedClient);
-
-    console.error(`[mcpcute] Connected to MCP server: ${name}`);
-
-    return connectedClient;
+      const reconnected = await this.connectToServer(serverName, serverConfig);
+      return operation(reconnected.client);
+    }
   }
 
   private async fetchToolsFromServer(serverName: string): Promise<AggregatedTool[]> {
@@ -330,28 +430,29 @@ export class MCPClientManager {
     }
 
     try {
-      const { client } = await this.connectToServer(serverName, serverConfig);
-      const response = await client.listTools();
-      // Server info may include description per MCP spec (not yet in SDK types)
-      const serverInfo = client.getServerVersion() as { description?: string } | undefined;
+      return await this.withServerClient(serverName, serverConfig, async (client) => {
+        const response = await client.listTools();
+        // Server info may include description per MCP spec (not yet in SDK types)
+        const serverInfo = client.getServerVersion() as { description?: string } | undefined;
 
-      const tools: AggregatedTool[] = response.tools.map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-        inputSchema: tool.inputSchema,
-        source: serverName,
-      }));
+        const tools: AggregatedTool[] = response.tools.map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+          source: serverName,
+        }));
 
-      const updatedCache: ServerToolsCache = {
-        tools,
-        fetched: true,
-        configSignature,
-        serverDescription: serverInfo?.description,
-      };
-      this.serverToolsCache.set(serverName, updatedCache);
-      this.persistServerCache(serverName, updatedCache);
+        const updatedCache: ServerToolsCache = {
+          tools,
+          fetched: true,
+          configSignature,
+          serverDescription: serverInfo?.description,
+        };
+        this.serverToolsCache.set(serverName, updatedCache);
+        this.persistServerCache(serverName, updatedCache);
 
-      return tools;
+        return tools;
+      });
     } catch (error) {
       console.error(
         `[mcpcute] Failed to fetch tools from ${serverName}:`,
@@ -550,13 +651,12 @@ export class MCPClientManager {
       throw new Error(`Server not found: ${serverName}`);
     }
 
-    // Connect to the server if not already connected
-    const { client } = await this.connectToServer(serverName, serverConfig);
-
-    return client.callTool({
-      name: originalToolName,
-      arguments: args,
-    });
+    return this.withServerClient(serverName, serverConfig, (client) =>
+      client.callTool({
+        name: originalToolName,
+        arguments: args,
+      })
+    );
   }
 
   // MCP-level operations
