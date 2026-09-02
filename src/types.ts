@@ -1,5 +1,6 @@
 export interface MCPServerConfig {
   command: string;
+  /** argv used to spawn the server. Not tool input (`execute_tool.arguments`). */
   args?: string[];
   env?: Record<string, string>;
   description?: string;

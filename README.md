@@ -2,20 +2,27 @@
 
 [![npm version](https://badge.fury.io/js/mcpcute.svg)](https://www.npmjs.com/package/mcpcute)
 
-MCP aggregator - aggregate multiple MCPs behind a single interface to reduce context pollution for AI agents.
+MCP aggregator. Puts multiple MCP servers behind one interface so an agent does not load every nested tool schema at once.
 
-Instead of exposing 20+ MCP tools directly to your AI agent, mcpcute provides a two-level hierarchy with just 7 tools:
+mcpcute exposes 8 tools:
 
-### MCP-Level Operations
-1. **list_mcps** - List all available MCP servers with their connection status
-2. **search_mcps** - Search for MCP servers by name
-3. **get_mcp_details** - Get detailed info about an MCP including its tools
+### MCP-level operations
+1. **list_mcps** - List configured MCP servers (name and description)
+2. **search_mcps** - Search MCP servers by name
+3. **get_mcp_details** - Details for one MCP, including its tools
 
-### Tool-Level Operations
-4. **list_tools** - List all tools for a specific MCP
-5. **search_tools** - Search for tools (optionally scoped to a specific MCP)
-6. **get_tool_details** - Get detailed schema and description for a tool
-7. **execute_tool** - Execute a tool from a chosen MCP (requires both MCP and tool names plus arguments)
+### Configuration
+4. **reload_config** - Re-read `mcpcute.config.json` from disk without restarting
+
+### Tool-level operations
+5. **list_tools** - List tools on one MCP
+6. **search_tools** - Search tools, optionally scoped to one MCP
+7. **get_tool_details** - Schema and description for a tool, looked up by `tool_name`
+8. **execute_tool** - Run a tool. Requires `mcp_name` and `tool_name`. Tool input goes in `arguments`.
+
+`arguments` on `execute_tool` is the JSON object forwarded to the underlying MCP `tools/call`. Config `args` is the argv used to spawn a server. They are not the same field.
+
+Each tool description starts with `[EXPLICIT ONLY ...]`. Agents are told not to call these unless the user mentions mcpcute or asks to manage MCP servers.
 
 ## Installation
 
@@ -45,6 +52,8 @@ Create a `mcpcute.config.json` file in your working directory (or set `MCPCUTE_C
   }
 }
 ```
+
+`args` here is spawn argv, the same field Claude Desktop uses. Optional `env` and `description` are also supported.
 
 ## Usage
 
@@ -99,50 +108,59 @@ MCPCUTE_CONFIG=/path/to/config.json npx mcpcute
 
 ## How it works
 
-1. mcpcute starts instantly - no upfront connections to any MCP servers
-2. Use `list_mcps` or `search_mcps` to discover available MCPs (no connections needed)
-3. Use `get_mcp_details` or `list_tools` to explore an MCP's capabilities (connects on-demand)
-4. Use `search_tools` to find tools across all MCPs or scoped to one
-5. Use `get_tool_details` to get the full schema for a tool
-6. Use `execute_tool` (with `mcp_name`, `tool_name`, and `arguments`) to run the tool
+1. mcpcute starts without connecting to any MCP server
+2. `list_mcps` or `search_mcps` read the config only
+3. `get_mcp_details` or `list_tools` connect on demand
+4. `search_tools` finds tools across all MCPs or one of them
+5. `get_tool_details` returns the input schema for a tool name
+6. `execute_tool` runs it with `mcp_name`, `tool_name`, and `arguments`
+7. `reload_config` picks up new or changed servers in the config file
 
-This reduces the initial context from potentially hundreds of tool schemas to just 7 simple tools, and startup is instant regardless of how many MCPs you configure.
+The agent sees these 8 schemas at startup, not every tool on every configured server.
 
 ## Cache
 
-mcpcute persists the discovered tool list for each MCP to disk so future runs can answer tool discovery requests without reconnecting to every server. The cache lives in:
+mcpcute writes the discovered tool list for each MCP to disk so later runs can answer discovery without reconnecting. The cache lives in:
 
 - macOS/Linux: `${XDG_CACHE_HOME:-~/.cache}/mcpcute`
 - Windows: `%LOCALAPPDATA%/mcpcute/cache`
 
-Override the location with `MCPCUTE_CACHE_DIR`. Cached entries are automatically invalidated whenever the command, arguments, or environment for a server change in `mcpcute.config.json`.
+Override the location with `MCPCUTE_CACHE_DIR`. A cache entry is dropped when that server's `command`, `args`, or `env` change in `mcpcute.config.json`.
 
-## Workflow Examples
+## Workflow examples
 
 ### Discovering filesystem tools
 ```
 1. search_mcps("file") → finds "filesystem" MCP
 2. list_tools("filesystem") → shows all filesystem tools
-3. get_tool_details("read_file") → see how to use it
+3. get_tool_details("read_file") → schema for that tool name
 4. execute_tool({ mcp_name: "filesystem", tool_name: "read_file", arguments: { path: "/tmp/example.txt" } }) → run it
 ```
 
+`get_tool_details` takes only `tool_name`. `execute_tool` always needs `mcp_name` as well. If two servers expose the same tool name, mcpcute prefixes it (`server__tool`). Pass that prefixed name to `get_tool_details`. `execute_tool` still needs `mcp_name` plus the original or prefixed `tool_name`.
+
 ### Exploring all available MCPs
 ```
-1. list_mcps() → see all configured MCPs
-2. get_mcp_details("fetch") → learn about this MCP
-3. list_tools("fetch") → see what it can do
+1. list_mcps() → configured MCPs
+2. get_mcp_details("fetch") → tools on that MCP
+3. list_tools("fetch") → same list, tools only
+```
+
+### After editing the config
+```
+1. reload_config() → re-read mcpcute.config.json
+2. list_mcps() → confirm the new server is there
 ```
 
 ## Why mcpcute?
 
-- **Instant startup**: Lazy loading means no waiting for 20+ MCP servers to connect
-- **Two-level hierarchy**: Clear separation between MCP discovery and tool discovery
-- **Reduced context pollution**: Instead of loading 50+ tool schemas into your AI's context, load just 7
-- **Dynamic tool discovery**: AI agents can search and discover tools as needed
-- **Scoped exploration**: Explore one MCP at a time instead of being overwhelmed
-- **Unified interface**: One consistent API for all your MCP tools
-- **Easy configuration**: Simple JSON config to aggregate multiple MCP servers
+- **Instant startup.** Lazy loading, no wait for every server to connect
+- **Two-level hierarchy.** Discover MCPs first, then tools
+- **Reduced context pollution.** 8 tool schemas instead of every nested tool
+- **Dynamic tool discovery.** Search when needed
+- **Scoped exploration.** One MCP at a time
+- **Unified interface.** One API for all aggregated tools
+- **Easy configuration.** JSON config of MCP servers
 
 ## License
 

@@ -21,7 +21,7 @@ async function main() {
 
   const server = new McpServer({
     name: "mcpcute-explicit-only",
-    version: "0.3.4",
+    version: "0.3.10",
   });
 
   // ============================================
@@ -31,7 +31,7 @@ async function main() {
   // Tool 1: List all MCPs
   server.tool(
     "list_mcps",
-    "[EXPLICIT ONLY - Do NOT use unless the user explicitly mentions 'mcpcute' or asks to manage/list MCP servers] List all available MCP servers with their connection status and tool counts.",
+    "[EXPLICIT ONLY - Do NOT use unless the user explicitly mentions 'mcpcute' or asks to manage/list MCP servers] List all configured MCP servers (name and description).",
     {},
     async () => {
       const mcps = clientManager.listMCPs();
@@ -129,7 +129,7 @@ async function main() {
   // Tool-Level Operations
   // ============================================
 
-  // Tool 5: List tools for a specific MCP
+  // Tool 5: List tools on one MCP
   server.tool(
     "list_tools",
     "[EXPLICIT ONLY - Do NOT use unless the user explicitly mentions 'mcpcute' or asks to list tools in an MCP] List all tools available in a specific MCP server.",
@@ -166,7 +166,7 @@ async function main() {
     }
   );
 
-  // Tool 5: Search tools across all MCPs or within a specific MCP
+  // Tool 6: Search tools across all MCPs or within a specific MCP
   server.tool(
     "search_tools",
     "[EXPLICIT ONLY - Do NOT use unless the user explicitly mentions 'mcpcute' or asks to search tools across MCPs] Search for tools across all MCPs or within a specific MCP.",
@@ -192,7 +192,7 @@ async function main() {
     }
   );
 
-  // Tool 6: Get tool details (schema, description)
+  // Tool 7: Get tool details (schema, description)
   server.tool(
     "get_tool_details",
     "[EXPLICIT ONLY - Do NOT use unless the user explicitly mentions 'mcpcute' or asks for tool details/schema] Get detailed information about a specific tool including its input schema and description.",
@@ -225,7 +225,7 @@ async function main() {
     }
   );
 
-  // Tool 7: Execute a tool
+  // Tool 8: Execute a tool
   server.tool(
     "execute_tool",
     "[EXPLICIT ONLY - Do NOT use unless the user explicitly mentions 'mcpcute' or asks to execute tools via mcpcute] Execute a tool from one of the aggregated MCPs (requires specifying both MCP and tool).",
@@ -235,7 +235,9 @@ async function main() {
       arguments: z
         .record(z.string(), z.any())
         .optional()
-        .describe("Arguments to pass to the tool"),
+        .describe(
+          "Input object for the underlying tool, forwarded as MCP tools/call arguments (not the server's spawn args)"
+        ),
     },
     async ({ mcp_name, tool_name, arguments: args }) => {
       try {

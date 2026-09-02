@@ -640,6 +640,7 @@ export class MCPClientManager {
     };
   }
 
+  /** `args` is forwarded as MCP `tools/call` `arguments`. */
   async executeTool(
     toolName: string,
     args: Record<string, unknown>,
